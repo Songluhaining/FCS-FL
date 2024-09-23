@@ -1,0 +1,7 @@
+Exception in thread "main" java.nio.file.InvalidPathException: Can't extract class name from java file path: D:\SCU\code\SPLC2021_Full_Dataset\SPLC2021_Full_Dataset\BuggyVersions\GPL\dddwise-GPL-1BUG-Full\_MultipleBugs_.NOB_1.ID_139\variants\model_m_ca4_0016\src
+	at slice.MappingUtil.extractVariantName(MappingUtil.java:60)
+	at slice.SliceFromStatement.saveFeatureInteractionsOutput(SliceFromStatement.java:161)
+	at slice.SliceFromStatement.sliceProgram(SliceFromStatement.java:65)
+	at slice.SliceFromStatement.sliceFromSource(SliceFromStatement.java:56)
+	at slice.SliceFromStatement.sliceSPLSystem(SliceFromStatement.java:35)
+	at slice.SliceMain.main(SliceMain.java:5)
