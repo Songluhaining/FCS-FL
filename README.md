@@ -14,5 +14,5 @@ The ranking result will be written into an excel file and store in the folder ex
 
 ### Data.
 1. The full version of data, you can download [here](https://tuanngokien.github.io/splc2021/)
-2. For the sake of simplification, you can download [this](https://drive.google.com/drive/folders/19TrAf14FSdIkCVEQLjFGxlkkFcPSVR9Z?usp=sharing) light version, in which each case contains only spectrum files, files contain suspicious statements identified by VarCop and the slice-based method.
+2. In our work, we eliminated all cases of non-feature interaction defects to demonstrate the validity of the method.
 
