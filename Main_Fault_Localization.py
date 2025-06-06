@@ -10,7 +10,7 @@ import subprocess
 from sklearn import preprocessing
 from tables.path import join_path
 
-from ConductDAG import conductDAG, computePred, computePred_copy, computePred_copy1
+from ConductDAG import computePred
 from dsEvfusion import softmax
 
 from generateObData import gererateObDataFromSB
@@ -22,7 +22,7 @@ from ranking.VarBugManager import is_var_bug_by_config
 from spc import SPCsManager
 from suspicious_statements_manager.SuspiciousStatementManager import get_multiple_buggy_statements, read_coverage_file, \
     get_suspicious_statement_varcop
-from util.FileManager import list_dir, join_path, get_outer_dir
+from util.FileManager import list_dir, join_path, get_outer_dir, is_path_exist, logger
 from ranking.Spectrum_Expression import JACCARD, SORENSEN_DICE, TARANTULA, OCHIAI, OP2, BARINEL, DSTAR, ROGERS_TANIMOTO, \
     AMPLE, \
     SIMPLE_MATCHING, RUSSELL_RAO, COHEN, SCOTT, ROGOT1, GEOMETRIC_MEAN, M2, WONG1, SOKAL, DICE, HUMANN, ZOLTAR, \
@@ -70,8 +70,6 @@ def start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_gr
     n = 0
     sum = 0
     i = 0
-    product_with_roles = {}
-    isFirst = True
     Hit1 = 0
 
     sbfl_metrics = [TARANTULA, OCHIAI, OP2, BARINEL, DSTAR]
@@ -98,16 +96,103 @@ def start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_gr
             continue
         SPCsManager.find_SPCs(mutated_project_dir, filtering_coverage_rate=0.1)
         buggy_statements = get_multiple_buggy_statements(mutated_project_name, mutated_project_dir)  #读取mutant.log文件得到异常语句
+        caulse_path = join_path(mutated_project_dir, 'CaulseResult.txt')
 
-        delete_files_in_folder(failed_graph_nodes)
-        delete_files_in_folder(failed_graph_edges)
-        delete_files_in_folder(failed_graph_slicenodes)
-        delete_files_in_folder(failed_graph_oberData)
+        if is_path_exist(caulse_path):
+            logger.info(f"Used Old Slicing log file [{caulse_path}]")
+            with open(caulse_path, 'r', encoding='utf-8') as f:
+                results_SAVG = json.load(f)
+            suspicious_stms_list = get_suspicious_statement_varcop(mutated_project_dir, 0.1)
+        else:
+            delete_files_in_folder(failed_graph_nodes)
+            delete_files_in_folder(failed_graph_edges)
+            delete_files_in_folder(failed_graph_slicenodes)
+            delete_files_in_folder(failed_graph_oberData)
 
-        subprocess.run(['java', '-jar', 'Static_Slicing-master.jar',
-                        mutated_project_dir, tem_saved_path]) #join_path(mutated_project_dir, 'spc_10.log')
+            subprocess.run(['java', '-jar', 'Static_Slicing-master.jar',
+                            mutated_project_dir, tem_saved_path]) #join_path(mutated_project_dir, 'spc_10.log')
+            gererateObDataFromSB(mutated_project_dir, failed_graph_nodes, failed_graph_oberData)
+            suspicious_stms_list = get_suspicious_statement_varcop(mutated_project_dir, 0.1)
+            list_failed_data = list_dir(failed_graph_nodes)
+            results_MAX = {}
+            results_MIN = {}
+            results_SAVG = {}
+            results_JAVG = {}
+            results_MED = {}
+            failed_product_size = len(list_failed_data)
+            for failed_data in list_failed_data:
+                productName = failed_data.split('.')[0]
+                data_path = join_path(failed_graph_oberData, productName + ".csv")
+                data = pd.read_csv(data_path, index_col=0)
+                nodePath = failed_graph_slicenodes + productName + ".txt"
+                nodes = list(suspicious_stms_list[productName].keys())
 
-        suspicious_stms_list = get_suspicious_statement_varcop(mutated_project_dir,0.1)
+                for node in nodes:
+                    try:
+                        if node != "Results":
+                            graph, selected_nodes = computePred(node, productName, failed_graph_nodes, failed_graph_edges)
+                            model = CausalModel(data=data, treatment=node, outcome='Results',
+                                                graph=graph)  # , graph=graphPath  graph
+                            identified_estimand = model.identify_effect(proceed_when_unidentifiable=True)
+                            estimate = model.estimate_effect(identified_estimand,
+                                                             method_name="backdoor.linear_regression")  # propensity_score_weighting  linear_regression
+                            if node in results_MAX:
+                                # max
+                                if abs(estimate.value) > results_MAX[node]:
+                                    results_MAX[node] = abs(estimate.value)
+                                # min
+                                if abs(estimate.value) < results_MIN[node]:
+                                    results_MIN[node] = abs(estimate.value)
+                                # SAVG
+                                results_SAVG[node] += (abs(estimate.value) / failed_product_size)
+                                # JAVG
+                                results_JAVG[node] *= (abs(estimate.value) ** (1 / failed_product_size))
+                                # results[node] = results[node] + abs(estimate.value)
+                            else:
+                                results_MAX[node] = abs(estimate.value)
+                                results_MIN[node] = abs(estimate.value)
+                                results_SAVG[node] = (abs(estimate.value) / failed_product_size)
+                                results_JAVG[node] = (abs(estimate.value) ** (1 / failed_product_size))
+                                results_MED[node] = []
+                            results_MED[node].append(abs(estimate.value))
+
+                        # print(node, estimate.value)
+                    except:
+                        results_MAX[node] = 0
+                        results_MIN[node] = 0
+                        results_SAVG[node] = 0
+                        results_JAVG[node] = 0
+                        results_MED[node] = 0
+
+            for node in results_MED:
+                results_MED[node] = np.median(results_MED[node])
+
+            value_results_MAX = list(results_MAX.values())
+            value_results_MIN = list(results_MIN.values())
+            value_results_SAVG = list(results_SAVG.values())
+            value_results_JAVG = list(results_JAVG.values())
+            value_results_MED = list(results_MED.values())
+
+            # ex4
+            if len(value_results_MAX) > 0:
+                value_results_MAX = softmax(value_results_MAX)
+                value_results_MIN = softmax(value_results_MIN)
+                value_results_SAVG = softmax(value_results_SAVG)
+                value_results_JAVG = softmax(value_results_JAVG)
+                value_results_MED = softmax(value_results_MED)
+
+            key_results = list(results_MAX.keys())
+            for tem in range(len(key_results)):
+                results_MAX[key_results[tem]] = value_results_MAX[tem]
+                results_MIN[key_results[tem]] = value_results_MIN[tem]
+                results_SAVG[key_results[tem]] = value_results_SAVG[tem]
+                results_JAVG[key_results[tem]] = value_results_JAVG[tem]
+                # results_MED[key_results[tem]] = value_results_MED[tem]
+
+            with open(caulse_path, 'w', encoding='utf-8') as f:
+                json.dump(results_SAVG, f, ensure_ascii=False, indent=4)
+
+
 
         # print("suspicious_stms_list", suspicious_stms_list)
 
@@ -176,98 +261,19 @@ def start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_gr
                                      full_ranked_list)
 
         all_stms = len(get_set_of_stms(all_stms_of_the_system))
-        gererateObDataFromSB(mutated_project_dir, failed_graph_nodes, failed_graph_oberData)
 
-        list_failed_data = list_dir(failed_graph_nodes)
-        results_MAX = {}
-        results_MIN = {}
-        results_SAVG = {}
-        results_JAVG = {}
-        results_MED = {}
-        failed_product_size = len(list_failed_data)
-        for failed_data in list_failed_data:
-            productName = failed_data.split('.')[0]
-            data_path = join_path(failed_graph_oberData, productName + ".csv")
-            data = pd.read_csv(data_path, index_col=0)
-            nodePath = failed_graph_slicenodes + productName + ".txt"
-            nodes = list(suspicious_stms_list[productName].keys())
-
-            for node in nodes:
-                try:
-                    if node != "Results":
-                        graph, selected_nodes = computePred(node, productName)
-                        model = CausalModel(data=data, treatment=node, outcome='Results', graph=graph) #, graph=graphPath  graph
-                        identified_estimand = model.identify_effect(proceed_when_unidentifiable=True)
-                        estimate = model.estimate_effect(identified_estimand, method_name="backdoor.linear_regression") #propensity_score_weighting  linear_regression
-                        if node in results_MAX:
-                            #max
-                            if abs(estimate.value) > results_MAX[node]:
-                                results_MAX[node] = abs(estimate.value)
-                            #min
-                            if abs(estimate.value) < results_MIN[node]:
-                                results_MIN[node] = abs(estimate.value)
-                            # SAVG
-                            results_SAVG[node] += (abs(estimate.value) / failed_product_size)
-                            # JAVG
-                            results_JAVG[node] *= (abs(estimate.value) ** (1 / failed_product_size))
-                            # results[node] = results[node] + abs(estimate.value)
-                        else:
-                            results_MAX[node] = abs(estimate.value)
-                            results_MIN[node] = abs(estimate.value)
-                            results_SAVG[node] = (abs(estimate.value) / failed_product_size)
-                            results_JAVG[node] = (abs(estimate.value) ** (1 / failed_product_size))
-                            results_MED[node] = []
-                        results_MED[node].append(abs(estimate.value))
-
-                    #print(node, estimate.value)
-                except:
-                    results_MAX[node] = 0
-                    results_MIN[node] = 0
-                    results_SAVG[node] = 0
-                    results_JAVG[node] = 0
-                    results_MED[node] = 0
-
-
-        for node in results_MED:
-            results_MED[node] = np.median(results_MED[node])
-
-        value_results_MAX = list(results_MAX.values())
-        value_results_MIN = list(results_MIN.values())
-        value_results_SAVG = list(results_SAVG.values())
-        value_results_JAVG = list(results_JAVG.values())
-        value_results_MED = list(results_MED.values())
-
-        # ex4
-        if len(value_results_MAX) > 0:
-
-            value_results_MAX = softmax(value_results_MAX)
-            value_results_MIN = softmax(value_results_MIN)
-            value_results_SAVG = softmax(value_results_SAVG)
-            value_results_JAVG = softmax(value_results_JAVG)
-            value_results_MED = softmax(value_results_MED)
-
-
-        key_results = list(results_MAX.keys())
-        for tem in range(len(key_results)):
-            results_MAX[key_results[tem]] = value_results_MAX[tem]
-            results_MIN[key_results[tem]] = value_results_MIN[tem]
-            results_SAVG[key_results[tem]] = value_results_SAVG[tem]
-            results_JAVG[key_results[tem]] = value_results_JAVG[tem]
-            results_MED[key_results[tem]] = value_results_MED[tem]
-
-        sstatements_by_sicling = set(list(results_MAX.keys()))
+        sstatements_by_sicling = set(list(results_SAVG.keys()))
         sstatements = sstatements_by_sicling#.intersection(sstatements_by_FCFLA)
         new_results = {}
         new_results_ci = {}
-        tem_row = i
-        alpha_w = 0.2
+
         for metric in sbfl_metrics:
             aw_tem = 0.1
 
             combined = []
 
             for sstatement in sstatements:
-                new_results[sstatement] = aw_tem * results_MAX[sstatement] + (1 - aw_tem) * \
+                new_results[sstatement] = aw_tem * results_SAVG[sstatement] + (1 - aw_tem) * \
                                                  suspicious_value_by_varcop[OP2][sstatement]
                 combined.append((sstatement, new_results[sstatement]))
 
@@ -294,7 +300,7 @@ def start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_gr
 
                             sum += (index+1)
 
-                            output[metric].loc[i] = [mutated_project_name, index+1, ((index+1) / all_stms) * 100]
+                            output[OP2].loc[i] = [mutated_project_name, index+1, ((index+1) / all_stms) * 100]
                             counter += 1
                             if metric == TARANTULA:
                                 i += 1
@@ -303,6 +309,7 @@ def start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_gr
                 for buggy_statement in buggy_statements:
                     sum += (RankBySBFL_with_RANK_and_EXAM[buggy_statement]["RANK"])
             n += 1
+    # result_set[set_bb] = Hit1
     return output
 
 if __name__ == '__main__':
@@ -325,12 +332,23 @@ if __name__ == '__main__':
     if not os.path.exists(failed_graph_oberData):
         os.makedirs(failed_graph_oberData)
 
-    system_name = "ExamDB"
-    buggy_systems_folder = "/home/whn/Desktop/ExamDB/4wise-ExamDB-1BUG-Full"
-
-    #statement-leavel localization
-    output = start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_graph_edges, failed_graph_slicenodes, failed_graph_oberData)
-
-    with pd.ExcelWriter("./experimental_results/expriment1/rank_1BUG_results"  + "-" + system_name + ".xlsx") as writer:
+    system_name = "Elevator"
+    buggy_systems_folder = "/home/whn/codes/datasets/4wise-Elevator-FH-JML-1BUG-Full"
+    output = start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_graph_edges,
+                                      failed_graph_slicenodes, failed_graph_oberData)
+    with pd.ExcelWriter("./experimental_results/expriment1/rank_1BUG_results-" + "-" + system_name + ".xlsx") as writer:
         for metric, df in output.items():
             df.to_excel(writer, sheet_name=str(metric))
+    results = {}
+    for aa in range(0, 11):
+        set_aa = round(aa * 0.1, 1)
+        results[set_aa] = {}
+        for bb in range(11):
+            set_bb = round(bb * 0.1, 1)
+            #statement-leavel localization
+            output = start_statements_ranking(buggy_systems_folder, failed_graph_nodes, failed_graph_edges, failed_graph_slicenodes, failed_graph_oberData, set_aa, set_bb, results[set_aa])
+            with pd.ExcelWriter("./experimental_results/expriment1/rank_1BUG_results-" + str(set_bb) + "-" + str(set_aa) + "-" + system_name + ".xlsx") as writer:
+                for metric, df in output.items():
+                    df.to_excel(writer, sheet_name=str(metric))
+    with open('./experimental_results/expriment1/RQ4b' + "-" + system_name + '.txt', 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)

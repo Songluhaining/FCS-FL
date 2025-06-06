@@ -440,7 +440,7 @@ def global_score_aggregation_mode(all_stms_of_the_system, normalized_score_list,
 
 
 def global_score_aggregation_arithmetic_mean(all_stms_of_the_system, normalized_score_list,
-                                             variant_level_suspiciousness, spectrum_expression, alpha=0):
+                                             variant_level_suspiciousness, spectrum_expression, alpha):
     score_type = spectrum_expression + "_score"
     all_stms_score_list = {}
     for variant in normalized_score_list:
@@ -876,7 +876,7 @@ def sbfl_rank_by_metric(statements_infor, isolated_stms, spectrum_expression):
     return descending_sort(data=spectrum_ranked_list, sorted_element=1)
 
 
-def varcop_ranking(statements_infor, variant_level_suspiciousness, spectrum_expression, alpha=0.5):
+def varcop_ranking(statements_infor, variant_level_suspiciousness, spectrum_expression, alpha):
     ranked_list = []
 
     #changed

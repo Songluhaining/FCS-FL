@@ -107,11 +107,11 @@ def computePred_copy(productName):
 
     return dot, nodes
 
-def computePred_copy1(node, productName):
+def computePred_copy1(node, productName, failed_graph_edges):
     dot = nx.DiGraph()
     nodes = set()
     edges = []
-    edgePath = "/home/whn/codes/Static_Slicing-master/Static_Slicing-master/output/edge/" + productName + ".txt"
+    edgePath = join_path(failed_graph_edges, productName + ".txt")
     with open(edgePath, 'r') as f:
         for line in f:
             edges = list(line.rstrip().split("->"))
@@ -136,23 +136,23 @@ def computePred_copy1(node, productName):
     nodes.add(node)
     nodes.add("Results")
     return dot, nodes
-def computePred(node, productName):
+def computePred(node, productName, failed_graph_nodes, failed_graph_edges):
     dot = nx.DiGraph()
 
-    # nodePath = "/home/whn/codes/Static_Slicing-master/Static_Slicing-master/output/node/" + productName + ".txt"
-    #
-    # nodes = []
-    # with open(nodePath, 'r') as f:
-    #     content = f.read()
-    #     nodes = content.split(",")
-    #
-    # # for node in nodes:
-    # #     dot.node(node)
-    # dot.add_nodes_from(nodes)
+    nodePath = join_path(failed_graph_nodes, productName + ".txt")#"/home/whn/codes/Static_Slicing-master/Static_Slicing-master/output/node/" + productName + ".txt"
+
+    nodes = []
+    with open(nodePath, 'r') as f:
+        content = f.read()
+        nodes = content.split(",")
+
+    # for node in nodes:
+    #     dot.node(node)
+    dot.add_nodes_from(nodes)
 
     nodes = set()
     edges = []
-    edgePath = "/home/whn/codes/Static_Slicing-master/Static_Slicing-master/output/edge/" + productName + ".txt"
+    edgePath = join_path(failed_graph_edges, productName + ".txt")
     with open(edgePath, 'r') as f:
         for line in f:
             edges = list(line.rstrip().split("->"))
@@ -172,7 +172,6 @@ def computePred(node, productName):
                         dot.remove_edge(edges[0], edges[1])
                         dot.remove_edge(edges[1], "Results")
                         nodes.remove(edges[1])
-
 
     dot.add_edge(node, "Results")
     nodes.add(node)

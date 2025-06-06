@@ -11,10 +11,13 @@ def delete_spc_file(folder_path):
             parent_path = os.path.join(root, dirs_s)
             for root_ss, dirs_ss, files_ss in os.walk(parent_path):
                 for file in files_ss:
-                    if file == "spc_10.log": #slicing_10.log   spc_10
+                    if file == "slicing_10.log": #slicing_10.log   spc_10
                         file_path = os.path.join(root_ss, file)
                         os.remove(file_path)
                         #print(file_path)
+                    if file == "CaulseResult.txt":
+                        file_path = os.path.join(root_ss, file)
+                        os.remove(file_path)
 
 
 def get_isSelect_mut(folder_path):
@@ -27,6 +30,6 @@ def get_isSelect_mut(folder_path):
             print(file_name)
         # print(len(varcop_isolated_set))
 
-folder_path = "/home/whn/Desktop/ExamDB/4wise-ExamDB-1BUG-Full"
+folder_path = "/home/whn/codes/datasets/4wise-Elevator-FH-JML-1BUG-Full"
 
 delete_spc_file(folder_path)
